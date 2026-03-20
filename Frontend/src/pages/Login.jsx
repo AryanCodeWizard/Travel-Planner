@@ -38,6 +38,11 @@ const Login = () => {
 
       localStorage.setItem("token", data.token);
       localStorage.setItem("userEmail", data.email); // Store email in localStorage
+      if (data.profile_photo) {
+        localStorage.setItem("profileImage", data.profile_photo);
+      } else {
+        localStorage.removeItem("profileImage"); // Clear old photo just in case
+      }
 
       if (loginType === "admin" && data.is_admin) {
         localStorage.setItem("isAdmin", "true");

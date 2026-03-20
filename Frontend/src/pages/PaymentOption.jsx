@@ -64,31 +64,100 @@ export default function FakePaymentPage() {
     };
 
     try {
-      // Step 1: Save booking to database
-      const saveResponse = await axios.post(
-        API_ENDPOINTS.SAVE_BOOKING,
-        bookingDetails
-      );
-
-      console.log("Booking saved:", saveResponse.data);
-
-      if (saveResponse.data.status === "success") {
-        // Email confirmation is handled by the backend automatically
-        console.log("Booking saved successfully:", saveResponse.data);
-        
-        // Save bookingId to sessionStorage for reference on success page
-        sessionStorage.setItem("bookingId", bookingId);
-        
-        // Navigate to success page
-        navigate("/success");
-      } else {
-        console.error("Error saving booking:", saveResponse.data.message);
-        alert("There was an error processing your payment. Please try again.");
+      if (Number(totalCost) < 1) {
+        alert("Invalid total cost. Please select a valid package before proceeding to payment.");
         setIsProcessing(false);
+        return;
       }
+
+      // Step 1: Create an order on the backend 
+      // Test Mode Note: Razorpay test accounts frequently reject amounts over ₹15,000. 
+      // We cap the actual payment intent to ₹100 here so the test modal always works, 
+      // while preserving your real totalCost for the database booking record.
+      const paymentIntentAmount = Number(totalCost) > 15000 ? 100 : totalCost;
+
+      const orderResponse = await axios.post(API_ENDPOINTS.CREATE_ORDER, {
+        amount: paymentIntentAmount
+      });
+
+      if (orderResponse.data.status !== 'success') {
+        alert(`There was an error creating the payment order: ${orderResponse.data.message || 'Please try again.'}`);
+        setIsProcessing(false);
+        return;
+      }
+
+      const { order } = orderResponse.data;
+
+      // Step 2: Initialize Razorpay Checkout
+      const options = {
+        key: import.meta.env.VITE_RAZORPAY_KEY_ID, // Enter the Key ID generated from the Dashboard
+        amount: order.amount, // Amount is in currency subunits. Default currency is INR
+        currency: order.currency,
+        name: "Travel Planner",
+        description: `Booking Confirmation: ${bookingId}`,
+        order_id: order.id,
+        handler: async function (response) {
+          try {
+            // Step 3: Verify payment and save booking
+            const paymentDetails = {
+              ...bookingDetails,
+              razorpay_payment_id: response.razorpay_payment_id,
+              razorpay_order_id: response.razorpay_order_id,
+              razorpay_signature: response.razorpay_signature,
+            };
+
+            const saveResponse = await axios.post(
+              API_ENDPOINTS.SAVE_BOOKING,
+              paymentDetails
+            );
+
+            if (saveResponse.data.status === "success") {
+              // Email confirmation is handled by the backend automatically
+              console.log("Booking saved successfully with payment verification.");
+              
+              // Save bookingId to sessionStorage for reference on success page
+              sessionStorage.setItem("bookingId", bookingId);
+              
+              // Navigate to success page
+              navigate("/success");
+            } else {
+              console.error("Error saving booking:", saveResponse.data.message);
+              alert("Payment successful, but there was an error saving your booking. Please contact support.");
+              setIsProcessing(false);
+            }
+          } catch (verificationError) {
+            console.error("Error during payment verification:", verificationError);
+            alert("Payment verification failed. Please contact support.");
+            setIsProcessing(false);
+          }
+        },
+        prefill: {
+          email: userEmail,
+        },
+        theme: {
+          color: "#3B82F6", // Blue match
+        },
+        modal: {
+          ondismiss: function () {
+            // Re-enable the pay button if user closes modal
+            setIsProcessing(false);
+          }
+        }
+      };
+
+      const rzp = new window.Razorpay(options);
+      
+      rzp.on('payment.failed', function (response) {
+        console.error("Payment failed:", response.error);
+        alert(`Payment failed: ${response.error.description}`);
+        setIsProcessing(false);
+      });
+
+      rzp.open();
     } catch (error) {
-      console.error("Error during API call:", error);
-      alert("There was an error processing your payment. Please try again.");
+      console.error("Error during payment initialization:", error);
+      const serverMessage = error.response?.data?.message || error.message;
+      alert(`There was an error initializing your payment: ${serverMessage}`);
       setIsProcessing(false);
     }
   };

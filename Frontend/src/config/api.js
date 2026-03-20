@@ -14,6 +14,7 @@ export const API_ENDPOINTS = {
   UPDATE_USER: `${API_BASE_URL}/user/update`,
   
   // Booking endpoints
+  CREATE_ORDER: `${API_BASE_URL}/booking/create-order`,
   SAVE_BOOKING: `${API_BASE_URL}/booking/save`,
   GET_USER_BOOKINGS: `${API_BASE_URL}/booking/user-bookings`,
   GET_BOOKINGS_FOR_REVIEW: `${API_BASE_URL}/booking/user-bookings-for-review`,

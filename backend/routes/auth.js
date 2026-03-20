@@ -113,7 +113,8 @@ router.post('/login', async (req, res) => {
       message: 'Login successful',
       token,
       email: user.email,
-      is_admin: user.is_admin || false
+      is_admin: user.is_admin || false,
+      profile_photo: user.profile_photo || null
     });
   } catch (error) {
     console.error('Login error:', error);

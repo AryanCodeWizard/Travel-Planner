@@ -18,23 +18,37 @@ export default function Navbar() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    const token = localStorage.getItem("token");
-    const storedImage = localStorage.getItem("profileImage");
-    const storedName = localStorage.getItem("userName");
+    const updateProfileData = () => {
+      const token = localStorage.getItem("token");
+      const storedImage = localStorage.getItem("profileImage");
+      const storedName = localStorage.getItem("userName");
 
-    setIsLoggedIn(!!token);
-    // Only use storedImage if it's not empty, otherwise use default
-    const defaultImage = "https://cdn.vectorstock.com/i/1000v/92/16/default-profile-picture-avatar-user-icon-vector-46389216.jpg";
-    setProfileImage((storedImage && storedImage.trim() !== "") ? storedImage : defaultImage);
+      setIsLoggedIn(!!token);
+      
+      // Rely on gradient initials if no specific image is provided
+      setProfileImage(storedImage && storedImage.trim() !== "" ? storedImage : "");
 
-    if (storedName) {
-      const nameParts = storedName.split(" ");
-      const initials =
-        nameParts.length > 1
-          ? nameParts[0][0] + nameParts[1][0]
-          : nameParts[0][0];
-      setUserInitials(initials.toUpperCase());
-    }
+      if (storedName) {
+        const nameParts = storedName.split(" ");
+        const initials =
+          nameParts.length > 1
+            ? nameParts[0][0] + nameParts[1][0]
+            : nameParts[0][0];
+        setUserInitials(initials.toUpperCase());
+      }
+    };
+
+    // Initial load
+    updateProfileData();
+
+    // Listen for cross-component triggers
+    window.addEventListener('profileImageUpdated', updateProfileData);
+    window.addEventListener('userDataUpdated', updateProfileData);
+
+    return () => {
+      window.removeEventListener('profileImageUpdated', updateProfileData);
+      window.removeEventListener('userDataUpdated', updateProfileData);
+    };
   }, []);
 
   const handleLogout = () => {

@@ -3,13 +3,58 @@ import Booking from '../models/Booking.js';
 import User from '../models/User.js';
 import { sendEmail } from '../utils/mailer.js';
 import { emailTemplates } from '../utils/emailTemplates.js';
+import Razorpay from 'razorpay';
+import crypto from 'crypto';
 
 const router = express.Router();
+
+// Create Razorpay Order
+router.post('/create-order', async (req, res) => {
+  try {
+    const { amount } = req.body;
+    if (!amount) {
+      return res.status(400).json({ status: 'error', message: 'Amount is required' });
+    }
+    
+    // Amount should be in paise (multiply by 100)
+    const cleanAmount = Number(amount.toString().replace(/[^0-9.-]+/g,""));
+    
+    if (isNaN(cleanAmount) || cleanAmount < 1) {
+       return res.status(400).json({ status: 'error', message: `Invalid payment amount: ${amount}` });
+    }
+
+    const razorpay = new Razorpay({
+      key_id: process.env.RAZORPAY_KEY_ID,
+      key_secret: process.env.RAZORPAY_KEY_SECRET,
+    });
+    
+    const options = {
+      amount: Math.round(cleanAmount * 100),
+      currency: 'INR',
+      receipt: `receipt_${Date.now()}`,
+    };
+    
+    const order = await razorpay.orders.create(options);
+    res.json({ status: 'success', order });
+  } catch (error) {
+    console.error('Error creating Razorpay order:', error);
+    
+    // Razorpay nests its actual human-readable messages inside error.error.description
+    const statusCode = error.statusCode || 500;
+    const errorMessage = error.error?.description || error.message || 'Failed to create order';
+    
+    res.status(statusCode).json({ 
+      status: 'error', 
+      message: errorMessage, 
+      details: error 
+    });
+  }
+});
 
 // Save booking
 router.post('/save', async (req, res) => {
   try {
-    const { destination, accommodation, totalCost, date, status, email, bookingId } = req.body;
+    const { destination, accommodation, totalCost, date, status, email, bookingId, razorpay_payment_id, razorpay_order_id, razorpay_signature } = req.body;
 
     // Validate required fields
     if (!destination || !accommodation || !totalCost || !date || !status || !email || !bookingId) {
@@ -30,6 +75,21 @@ router.post('/save', async (req, res) => {
     }
 
     const bookedBy = user.name;
+
+    // Verify Razorpay signature
+    if (!razorpay_payment_id || !razorpay_order_id || !razorpay_signature) {
+      return res.status(400).json({ status: 'error', message: 'Payment verification details are required' });
+    }
+    
+    const bodyText = razorpay_order_id + '|' + razorpay_payment_id;
+    const expectedSignature = crypto
+      .createHmac('sha256', process.env.RAZORPAY_KEY_SECRET)
+      .update(bodyText.toString())
+      .digest('hex');
+
+    if (expectedSignature !== razorpay_signature) {
+      return res.status(400).json({ status: 'error', message: 'Invalid payment signature' });
+    }
 
     // Check if booking already exists
     const existingBooking = await Booking.findOne({ booking_id: bookingId });
